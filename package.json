@@ -1,11 +1,12 @@
 {
   "name": "whatsapp-cloud-scheduler",
   "version": "1.0.0",
-  "description": "Simple 1:00 AM WhatsApp group scheduler",
+  "description": "Simple 1:00 AM WhatsApp group scheduler with Web QR UI",
   "main": "index.js",
   "dependencies": {
     "@whiskeysockets/baileys": "^6.6.0",
-    "qrcode-terminal": "^0.12.0"
+    "express": "^4.19.2",
+    "qrcode": "^1.5.3"
   },
   "scripts": {
     "start": "node index.js"
