@@ -1,0 +1,13 @@
+{
+  "name": "whatsapp-cloud-scheduler",
+  "version": "1.0.0",
+  "description": "Simple 1:00 AM WhatsApp group scheduler",
+  "main": "index.js",
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.6.0",
+    "qrcode-terminal": "^0.12.0"
+  },
+  "scripts": {
+    "start": "node index.js"
+  }
+}
