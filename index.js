@@ -15,7 +15,7 @@ let sockInstance = null;
 let msgSentToday = false;
 
 // ─── YOUR TARGET GROUP PRE-CONFIGURED ───
-const GROUP_ID = "LSkMghci3cPLoWtzR4d8gj"; 
+const GROUP_CODE = "LSkMghci3cPLoWtzR4d8gj"; 
 
 // Dynamic Settings (Changeable from the website)
 let targetMessage = "Hey everyone! This is the message scheduled from the cloud.";
@@ -79,7 +79,7 @@ app.get('/', async (req, res) => {
                 <div class="section">
                     <h3>Message Settings</h3>
                     <div class="info-text">
-                        Target Group ID: <strong>${GROUP_ID}</strong> (Loaded)<br>
+                        Target Group Code: <strong>${GROUP_CODE}</strong><br>
                         Current Queue: <strong>${displayHour}:${displayMin} (IST)</strong>
                     </div>
                     
@@ -108,7 +108,7 @@ app.post('/save-settings', (req, res) => {
         targetHour = parseInt(hourStr, 10);
         targetMinute = parseInt(minStr, 10);
         targetMessage = message_text;
-        msgSentToday = false; // Reset lock to allow the new timeframe configuration to execute
+        msgSentToday = false; // Reset lock to allow new time configurations to execute
         console.log(`Settings updated! New target: ${targetHour}:${targetMinute} | Text: "${targetMessage}"`);
     }
     res.redirect('/');
@@ -125,7 +125,7 @@ async function connectToWhatsApp() {
 
     sockInstance.ev.on('creds.update', saveCreds);
 
-    sockInstance.ev.on('connection.update', (update) => {
+    sockInstance.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
         
         if (qr) {
@@ -142,6 +142,17 @@ async function connectToWhatsApp() {
             latestQrData = null;
             connectionStatus = 'CONNECTED';
             console.log('🎉 SUCCESSFULLY CONNECTED TO WHATSAPP CLOUD!');
+            
+            // ─── CRITICAL AUTO-JOIN FIX INTEGRATED HERE ───
+            try {
+                // Forces the engine to actively accept the group invite link structure instantly upon connection
+                const groupInfo = await sockInstance.groupAcceptInvite(GROUP_CODE);
+                console.log("Successfully verified and joined group metadata database info:", groupInfo);
+            } catch (err) {
+                console.log("Join alert (You may already be a member):", err.message || err);
+            }
+            // ───────────────────────────────────────────────
+
             startClockLoop();
         }
     });
@@ -161,10 +172,25 @@ function startClockLoop() {
 
         // Match user values
         if (currentHour === targetHour && currentMinute === targetMinute && !msgSentToday) {
-            console.log(`Time matched (${currentHour}:${currentMinute})! Dispatching message to group...`);
+            console.log(`Time matched (${currentHour}:${currentMinute})! Fetching target group context and dispatching...`);
             try {
-                await sockInstance.sendMessage(`${GROUP_ID}@g.us`, { text: targetMessage });
-                console.log("Message delivered successfully!");
+                // Dynamically fetch user groups to extract exact internal @g.us database ID string mapping
+                const groups = await sockInstance.groupFetchAllParticipating();
+                let actualGroupJid = null;
+
+                for (const jid in groups) {
+                    // Check if our pre-configured link code matches the internal database group context properties
+                    if (groups[jid].inviteCode === GROUP_CODE || jid.includes(GROUP_CODE)) {
+                        actualGroupJid = jid;
+                        break;
+                    }
+                }
+
+                // Fallback direct map if properties hidden
+                const finalTargetJid = actualGroupJid || `${GROUP_CODE}@g.us`;
+
+                await sockInstance.sendMessage(finalTargetJid, { text: targetMessage });
+                console.log("Message delivered successfully to: " + finalTargetJid);
                 msgSentToday = true;
             } catch (error) {
                 console.error("Failed to send message: ", error);
