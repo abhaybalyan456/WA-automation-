@@ -1,77 +1,126 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const express = require('express');
 const QRCode = require('qrcode');
-const path = require('path');
+const bodyParser = require('body-parser');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// Variables to keep track of state
+app.use(bodyParser.urlencoded({ extended: true }));
+
+// Global System Variables
 let latestQrData = null;
 let connectionStatus = 'Disconnected. Waiting for QR generation...';
 let sockInstance = null;
+let msgSentToday = false;
 
-// 1. CONFIGURATION: SET YOUR MESSAGE TARGET
-const GROUP_ID = "https://chat.whatsapp.com/LSkMghci3cPLoWtzR4d8gj"; // Put your ://whatsapp.com characters here
-const MESSAGE = "gn bhai log!!";
+// ─── YOUR TARGET GROUP PRE-CONFIGURED ───
+const GROUP_ID = "LSkMghci3cPLoWtzR4d8gj"; 
 
-// 2. THE WEB FRONTEND UI (HTML Page with Refresh button)
+// Dynamic Settings (Changeable from the website)
+let targetMessage = "Hey everyone! This is the message scheduled from the cloud.";
+let targetHour = 1;   // Default 1 AM
+let targetMinute = 0;  // Default 00 mins
+
+// 1. THE VISUAL INTERFACE (Dashboard + Configurations)
 app.get('/', async (req, res) => {
+    let qrSection = '';
+    
     if (connectionStatus === 'CONNECTED') {
-        return res.send(`
-            <style>body { font-family: sans-serif; text-align: center; padding-top: 50px; background: #f0f2f5; }</style>
-            <h2>🎉 Connected!</h2>
-            <p>Your WhatsApp automation server is active. You can close this webpage now.</p>
-        `);
+        qrSection = `<div style="background:#e3fcef;color:#137333;padding:15px;border-radius:6px;font-weight:bold;margin-bottom:20px;">🎉 Connected to WhatsApp Cloud!</div>`;
+    } else if (!latestQrData) {
+        qrSection = `<div><h3>Generating QR Code...</h3><p>Please refresh in 5 seconds.</p><script>setTimeout(() => location.reload(), 5000);</script></div>`;
+    } else {
+        try {
+            const qrImageSrc = await QRCode.toDataURL(latestQrData);
+            qrSection = `
+                <h3>Link Your WhatsApp Account</h3>
+                <p>Status: <span style="color:#007bff;font-weight:bold;">${connectionStatus}</span></p>
+                <img src="${qrImageSrc}" alt="WhatsApp QR Code" style="width: 220px; height: 220px; border:1px solid #ccc; padding:5px;" />
+                <p style="font-size: 13px; color: #666; margin-top:5px;">Open WhatsApp > Linked Devices > Link a Device</p>
+                <button type="button" onclick="location.reload()" style="background:#6c757d;margin-top:10px;">🔄 Refresh QR Code</button>
+            `;
+        } catch (err) {
+            qrSection = `<p>Error creating QR code display image.</p>`;
+        }
     }
 
-    if (!latestQrData) {
-        return res.send(`
-            <style>body { font-family: sans-serif; text-align: center; padding-top: 50px; }</style>
-            <h2>Generating QR Code...</h2>
-            <p>Please refresh the page in 5 seconds.</p>
-            <script>setTimeout(() => location.reload(), 5000);</script>
-        `);
-    }
+    // Format display padding time
+    const displayHour = String(targetHour).padStart(2, '0');
+    const displayMin = String(targetMinute).padStart(2, '0');
 
-    try {
-        // Convert the raw WhatsApp string into a scannable Web Image
-        const qrImageSrc = await QRCode.toDataURL(latestQrData);
-        res.send(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>WhatsApp Cloud Link</title>
-                <style>
-                    body { font-family: sans-serif; text-align: center; padding: 40px; background: #fafafa; color: #333; }
-                    .card { background: white; max-width: 400px; margin: 0 auto; padding: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-                    button { background: #007bff; color: white; border: none; padding: 10px 20px; font-size: 16px; border-radius: 4px; cursor: pointer; margin-top: 20px; }
-                    button:hover { background: #0056b3; }
-                </style>
-            </head>
-            <body>
-                <div class="card">
-                    <h2>Link Your WhatsApp</h2>
-                    <p>Status: <strong>${connectionStatus}</strong></p>
-                    <img src="${qrImageSrc}" alt="WhatsApp QR Code" style="width: 250px; height: 250px;" />
-                    <p style="font-size: 14px; color: #666;">Open WhatsApp > Linked Devices > Link a Device</p>
-                    <button onclick="location.reload()">🔄 Refresh QR Code</button>
+    res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>WhatsApp Cloud Controller</title>
+            <style>
+                body { font-family: -apple-system, sans-serif; background: #f0f2f5; padding: 30px; display: flex; justify-content: center; }
+                .container { background: white; max-width: 500px; width: 100%; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+                h2 { color: #075e54; margin-top: 0; text-align: center; }
+                .section { border: 1px solid #e1e4e8; padding: 20px; border-radius: 8px; margin-bottom: 20px; background: #fafbfc; }
+                label { display: block; font-weight: bold; margin-bottom: 8px; color: #4a4a4a; }
+                input[type="text"], input[type="time"] { width: 95%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 15px; margin-bottom: 15px; }
+                button { width: 100%; background: #25d366; color: white; border: none; padding: 12px; font-size: 16px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+                button:hover { background: #20ba5a; }
+                .info-text { font-size: 14px; background: #e8f0fe; color: #1a73e8; padding: 10px; border-radius: 6px; margin-bottom: 15px; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h2>WhatsApp Cloud Scheduler</h2>
+                
+                <!-- QR Code Connection Section -->
+                <div class="section" style="text-align: center;">
+                    ${qrSection}
                 </div>
-            </body>
-            </html>
-        `);
-    } catch (err) {
-        res.status(500).send('Error rendering QR image.');
-    }
+
+                <!-- Settings Configuration Section -->
+                <div class="section">
+                    <h3>Message Settings</h3>
+                    <div class="info-text">
+                        Target Group ID: <strong>${GROUP_ID}</strong> (Loaded)<br>
+                        Current Queue: <strong>${displayHour}:${displayMin} (IST)</strong>
+                    </div>
+                    
+                    <form action="/save-settings" method="POST">
+                        <label>Select Send Time (24-Hour Format):</label>
+                        <input type="time" name="scheduled_time" value="${displayHour}:${displayMin}" required>
+                        
+                        <label>Your Message Text:</label>
+                        <input type="text" name="message_text" value="${targetMessage}" required placeholder="Type group message here...">
+                        
+                        <button type="submit">💾 Save & Update Queue</button>
+                    </form>
+                </div>
+            </div>
+        </body>
+        </html>
+    `);
 });
 
-// 3. WHATSAPP CONNECTION CORE ENGINE
+// 2. SAVE CONFIGURATIONS PATHWAY
+app.post('/save-settings', (req, res) => {
+    const { scheduled_time, message_text } = req.body;
+    
+    if (scheduled_time && message_text) {
+        const [hourStr, minStr] = scheduled_time.split(':');
+        targetHour = parseInt(hourStr, 10);
+        targetMinute = parseInt(minStr, 10);
+        targetMessage = message_text;
+        msgSentToday = false; // Reset lock to allow the new timeframe configuration to execute
+        console.log(`Settings updated! New target: ${targetHour}:${targetMinute} | Text: "${targetMessage}"`);
+    }
+    res.redirect('/');
+});
+
+// 3. WHATSAPP CONNECTION ENGINE
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
     
     sockInstance = makeWASocket({
         auth: state,
-        printQRInTerminal: true // Still leaves it in logs as a fallback backup
+        printQRInTerminal: true
     });
 
     sockInstance.ev.on('creds.update', saveCreds);
@@ -79,7 +128,6 @@ async function connectToWhatsApp() {
     sockInstance.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
         
-        // Catch the real-time changing QR string data
         if (qr) {
             latestQrData = qr;
             connectionStatus = 'Scan ready. Code refreshes every 20 seconds.';
@@ -89,32 +137,33 @@ async function connectToWhatsApp() {
             latestQrData = null;
             const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
             connectionStatus = 'Reconnecting...';
-            console.log('Connection closed. Reconnecting...', shouldReconnect);
             if (shouldReconnect) connectToWhatsApp();
         } else if (connection === 'open') {
-            latestQrData = null; // Clear QR data once linked
+            latestQrData = null;
             connectionStatus = 'CONNECTED';
             console.log('🎉 SUCCESSFULLY CONNECTED TO WHATSAPP CLOUD!');
-            startClockLoop(sockInstance);
+            startClockLoop();
         }
     });
 }
 
-// 4. BACKGROUND 1:00 AM TIMER LOOP
-function startClockLoop(sock) {
-    console.log("Cloud scheduler active. Monitoring for 1:00 AM target...");
-    let msgSentToday = false;
+// 4. BACKGROUND TIMER LOOP
+function startClockLoop() {
+    console.log("Cloud monitoring engine started.");
 
     setInterval(async () => {
-        // Keeps time context natively fixed to Indian Standard Time (IST)
+        if (connectionStatus !== 'CONNECTED' || !sockInstance) return;
+
+        // Force clock calculation to align with Indian Standard Time (IST)
         const now = new Date(new Date().toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
         const currentHour = now.getHours();
         const currentMinute = now.getMinutes();
 
-        if (currentHour === 1 && currentMinute === 0 && !msgSentToday) {
-            console.log("Time matched! Pushing message to group...");
+        // Match user values
+        if (currentHour === targetHour && currentMinute === targetMinute && !msgSentToday) {
+            console.log(`Time matched (${currentHour}:${currentMinute})! Dispatching message to group...`);
             try {
-                await sock.sendMessage(`${GROUP_ID}@g.us`, { text: MESSAGE });
+                await sockInstance.sendMessage(`${GROUP_ID}@g.us`, { text: targetMessage });
                 console.log("Message delivered successfully!");
                 msgSentToday = true;
             } catch (error) {
@@ -122,15 +171,15 @@ function startClockLoop(sock) {
             }
         }
 
-        // Reset system flags at 2:00 AM to prepare for tomorrow's run
-        if (currentHour === 2) {
+        // Auto reset verification flag 1 hour later
+        if (currentHour === (targetHour + 1) % 24) {
             msgSentToday = false;
         }
-    }, 10000); // Check the system clock array loops every 10 seconds
+    }, 10000); // Clock refresh sweep loops every 10 seconds
 }
 
 // 5. START SERVER
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Web application hosted on port ${PORT}`);
+    console.log(`Web application dashboard live on port ${PORT}`);
     connectToWhatsApp();
 });
